@@ -259,10 +259,6 @@ class Address {
         return list;
     }
 
-    public String toString() {
-        return String.format("Name: %s, City: %s", this.name, this.city);
-    }
-
     public String getName() {
         return this.name;
     }
@@ -512,7 +508,6 @@ class UndoButton extends CommandButton {
             if (super.raf.length() > 0) {
                 super.raf.setLength(super.raf.length() - CommandButton.RECORD_SIZE * 2);
                 this.careTaker.getPrev();
-                //this.careTaker.add(originator.saveStateToMemento());
                 readAddress(0);
             }
         } catch (IOException ex) {
