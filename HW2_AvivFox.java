@@ -606,14 +606,13 @@ class CareTaker {
 
     public void add(Memento state) {
         if (state == null) return;
-        System.out.println(String.format("Added: %s", state.getAddress()));
         this.mementos.add(state);
         index = this.mementos.size() - 1;
     }
 
     public Memento getNext() {
-        if (this.mementos.isEmpty() || index >= this.mementos.size() - 1) return null;
-        return mementos.get(++index);
+        if (this.mementos.isEmpty() || index > this.mementos.size() - 1) return null;
+        return mementos.get(index++);
     }
 
     public Memento getPrev() {
