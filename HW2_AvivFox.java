@@ -247,6 +247,22 @@ class Address {
         }
     }
 
+    public static ArrayList<Address> arrayFromFile(RandomAccessFile raf) {
+        ArrayList<Address> list = new ArrayList<>();
+        try {
+            raf.seek(0);
+            while (raf.getFilePointer() < raf.length())
+                list.add(Address.fromFile(raf));
+        } catch (IOException ex) {
+            ex.printStackTrace();
+        }
+        return list;
+    }
+
+    public String toString() {
+        return String.format("Name: %s, City: %s", this.name, this.city);
+    }
+
     public String getName() {
         return this.name;
     }
@@ -308,12 +324,19 @@ class CommandButton extends Button implements Command {
     public final static int RECORD_SIZE = (NAME_SIZE + STREET_SIZE + CITY_SIZE + STATE_SIZE + ZIP_SIZE);
     protected AddressBookPane p;
     protected RandomAccessFile raf;
-    protected ArrayList<Address> undo = new ArrayList<>();
 
     public CommandButton(AddressBookPane pane, RandomAccessFile r) {
         super();
         p = pane;
         raf = r;
+    }
+
+    public void clearText() {
+        p.SetCity("");
+        p.SetName("");
+        p.SetState("");
+        p.SetStreet("");
+        p.SetZip("");
     }
 
     public void Execute() {
@@ -322,7 +345,7 @@ class CommandButton extends Button implements Command {
     /**
      * Write a record at the end of the file
      */
-    public void writeAddress() {
+    public Address writeAddress() {
         try {
             raf.seek(raf.length());
             FixedLengthStringIO.writeFixedLengthString(p.GetName(),
@@ -335,8 +358,10 @@ class CommandButton extends Button implements Command {
                     STATE_SIZE, raf);
             FixedLengthStringIO.writeFixedLengthString(p.GetZip(),
                     ZIP_SIZE, raf);
+            return new Address(p.GetName(), p.GetStreet(), p.GetCity(), p.GetState(), p.GetZip());
         } catch (IOException ex) {
             ex.printStackTrace();
+            return null;
         }
     }
 
@@ -373,14 +398,21 @@ class CommandButton extends Button implements Command {
 }
 
 class AddButton extends CommandButton {
-    public AddButton(AddressBookPane pane, RandomAccessFile r) {
+    private CareTaker careTaker;
+    private Originator originator = new Originator();
+
+    public AddButton(AddressBookPane pane, RandomAccessFile r, CareTaker careTaker) {
         super(pane, r);
         this.setText("Add");
+        this.careTaker = careTaker;
     }
 
     @Override
     public void Execute() {
-        writeAddress();
+        Address address = writeAddress();
+        if (address == null) return;
+        originator.setState(address);
+        careTaker.add(originator.saveStateToMemento());
     }
 }
 
@@ -396,6 +428,8 @@ class NextButton extends CommandButton {
             long currentPosition = raf.getFilePointer();
             if (currentPosition < raf.length())
                 readAddress(currentPosition);
+            else if (raf.length() == 0)
+                clearText();
         } catch (IOException ex) {
             ex.printStackTrace();
         }
@@ -414,6 +448,8 @@ class PreviousButton extends CommandButton {
             long currentPosition = raf.getFilePointer();
             if (currentPosition - 2 * 2 * RECORD_SIZE >= 0)
                 readAddress(currentPosition - 2 * 2 * RECORD_SIZE);
+            else if (raf.length() == 0)
+                clearText();
         } catch (IOException ex) {
             ex.printStackTrace();
         }
@@ -432,6 +468,8 @@ class LastButton extends CommandButton {
             long lastPosition = raf.length();
             if (lastPosition > 0)
                 readAddress(lastPosition - 2 * RECORD_SIZE);
+            else if (raf.length() == 0)
+                clearText();
         } catch (IOException ex) {
             ex.printStackTrace();
         }
@@ -448,6 +486,8 @@ class FirstButton extends CommandButton {
     public void Execute() {
         try {
             if (raf.length() > 0) readAddress(0);
+            else if (raf.length() == 0)
+                clearText();
         } catch (IOException ex) {
             ex.printStackTrace();
         }
@@ -470,12 +510,9 @@ class UndoButton extends CommandButton {
     public void Execute() {
         try {
             if (super.raf.length() > 0) {
-                super.raf.seek(super.raf.length() - CommandButton.RECORD_SIZE * 2);
-                Address address = Address.fromFile(super.raf);
-                if (address == null) return;
                 super.raf.setLength(super.raf.length() - CommandButton.RECORD_SIZE * 2);
-                this.originator.setState(address);
-                this.careTaker.add(originator.saveStateToMemnto());
+                this.careTaker.getPrev();
+                //this.careTaker.add(originator.saveStateToMemento());
                 readAddress(0);
             }
         } catch (IOException ex) {
@@ -498,9 +535,11 @@ class RedoButton extends CommandButton {
 
     @Override
     public void Execute() {
-        Memento memento = careTaker.getPrev();
-        if (memento == null || memento.getAddress() == null) return;
-        Address.saveToEndOfFile(super.raf, memento.getAddress());
+        Memento m = careTaker.getNext();
+        if (m == null) return;
+        originator.getStateFromMemento(m);
+        if (originator.getState() == null) return;
+        Address.saveToEndOfFile(super.raf, originator.getState());
         try {
             readAddress(super.raf.length() - 2 * CommandButton.RECORD_SIZE);
         } catch (IOException ex) {
@@ -529,13 +568,18 @@ class PaneDecorator implements AddressBookPaneDecorator {
 class MainPaneDecorator extends PaneDecorator {
     MainPaneDecorator(AddressBookPane pane) {
         super(pane);
+        Originator originator = new Originator();
         CareTaker careTaker = new CareTaker();
-        AddButton jbtAdd = new AddButton(pane, pane.raf);
+        AddButton jbtAdd = new AddButton(pane, pane.raf, careTaker);
         RedoButton jbtRedo = new RedoButton(pane, pane.raf, careTaker);
         UndoButton jbtUndo = new UndoButton(pane, pane.raf, careTaker);
         jbtAdd.setOnAction(pane.ae);
         jbtRedo.setOnAction(pane.ae);
         jbtUndo.setOnAction(pane.ae);
+        Address.arrayFromFile(pane.raf).forEach(a -> {
+            originator.setState(a);
+            careTaker.add(originator.saveStateToMemento());
+        });
         this.getPane().getButtonsPane().getChildren().addAll(jbtAdd, jbtRedo, jbtUndo);
     }
 }
@@ -557,22 +601,24 @@ class CareTaker {
     private int index;
 
     CareTaker() {
-        this.index = mementos.size() - 1;
+        this.index = mementos.size();
     }
 
     public void add(Memento state) {
+        if (state == null) return;
+        System.out.println(String.format("Added: %s", state.getAddress()));
         this.mementos.add(state);
         index = this.mementos.size() - 1;
     }
 
     public Memento getNext() {
-        if (this.mementos.isEmpty() || index >= this.mementos.size()) return null;
-        return mementos.get(index++);
+        if (this.mementos.isEmpty() || index >= this.mementos.size() - 1) return null;
+        return mementos.get(++index);
     }
 
     public Memento getPrev() {
-        if (this.mementos.isEmpty() || index < 0) return null;
-        return mementos.get(index--);
+        if (this.mementos.isEmpty() || index <= 0) return null;
+        return mementos.get(--index);
     }
 }
 
@@ -587,12 +633,11 @@ class Originator {
         return this.state;
     }
 
-    public Memento saveStateToMemnto() {
+    public Memento saveStateToMemento() {
         return new Memento(this.state);
     }
 
-    public void getStateFromMemnto(Memento memento) {
-        if (memento == null) return;
+    public void getStateFromMemento(Memento memento) {
         this.state = memento.getAddress();
     }
 }
