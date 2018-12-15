@@ -31,7 +31,7 @@ public class HW2_AvivFox extends Application {
         primaryStage.setTitle("AddressBook");
         primaryStage.setScene(scene);
         primaryStage.show();
-        //primaryStage.setAlwaysOnTop(true);
+        primaryStage.setAlwaysOnTop(true);
         for (int i = 0; i < AddressBookPane.MAX_PANES; i++) {
             Stage stage = new Stage();
             AddressBookPane addressBookPane = AddressBookPane.getInstance();
@@ -40,7 +40,9 @@ public class HW2_AvivFox extends Application {
             sc.getStylesheets().add("styles.css");
             stage.setTitle("AddressBook");
             stage.setScene(sc);
+            stage.setAlwaysOnTop(true);
             stage.show();
+            stage.setOnCloseRequest(event -> AddressBookPane.decreaseCreated());
         }
     }
 }
@@ -87,7 +89,11 @@ class AddressBookPane extends GridPane {
         if (created == 1)
             return new MainPaneDecorator(new AddressBookPane(randomAccessFile)).getPane();
         else
-            return new PaneDecorator(new AddressBookPane(randomAccessFile)).getPane();
+            return new SecondPaneDecorator(new AddressBookPane(randomAccessFile)).getPane();
+    }
+
+    public static void decreaseCreated() {
+        created--;
     }
 
     private AddressBookPane(RandomAccessFile raf) { // Open or create a random access file
@@ -544,10 +550,12 @@ class RedoButton extends CommandButton {
 }
 
 interface AddressBookPaneDecorator {
-    public AddressBookPane getPane();
+    AddressBookPane getPane();
+
+    void addButtons(CommandButton... buttons);
 }
 
-class PaneDecorator implements AddressBookPaneDecorator {
+abstract class PaneDecorator implements AddressBookPaneDecorator {
     private AddressBookPane pane;
 
     public PaneDecorator(AddressBookPane pane) {
@@ -558,6 +566,12 @@ class PaneDecorator implements AddressBookPaneDecorator {
     public AddressBookPane getPane() {
         return this.pane;
     }
+
+    @Override
+    public void addButtons(CommandButton... buttons) {
+        this.pane.getButtonsPane().getChildren().addAll(buttons);
+    }
+
 }
 
 class MainPaneDecorator extends PaneDecorator {
@@ -575,19 +589,25 @@ class MainPaneDecorator extends PaneDecorator {
             originator.setState(a);
             careTaker.add(originator.saveStateToMemento());
         });
-        this.getPane().getButtonsPane().getChildren().addAll(jbtAdd, jbtRedo, jbtUndo);
+        this.addButtons(jbtAdd, jbtRedo, jbtUndo);
+    }
+}
+
+class SecondPaneDecorator extends PaneDecorator {
+    SecondPaneDecorator(AddressBookPane pane) {
+        super(pane);
     }
 }
 
 class Memento {
-    private Address address;
+    private Address state;
 
-    Memento(Address address) {
-        this.address = address;
+    Memento(Address state) {
+        this.state = state;
     }
 
-    Address getAddress() {
-        return this.address;
+    Address getState() {
+        return this.state;
     }
 }
 
@@ -632,7 +652,7 @@ class Originator {
     }
 
     public void getStateFromMemento(Memento memento) {
-        this.state = memento.getAddress();
+        this.state = memento.getState();
     }
 }
 
