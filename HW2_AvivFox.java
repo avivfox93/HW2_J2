@@ -230,89 +230,6 @@ class AddressBookPane extends GridPane {
     }
 }
 
-class Address {
-    String name, street, city, state, zip;
-
-    public Address(String name, String street, String city, String state, String zip) {
-        this.name = name;
-        this.street = street;
-        this.city = city;
-        this.state = state;
-        this.zip = zip;
-    }
-
-    public static Address fromFile(RandomAccessFile raf) {
-        try {
-            return new Address(FixedLengthStringIO.readFixedLengthString(CommandButton.NAME_SIZE, raf),
-                    FixedLengthStringIO.readFixedLengthString(CommandButton.STREET_SIZE, raf),
-                    FixedLengthStringIO.readFixedLengthString(CommandButton.CITY_SIZE, raf),
-                    FixedLengthStringIO.readFixedLengthString(CommandButton.STATE_SIZE, raf),
-                    FixedLengthStringIO.readFixedLengthString(CommandButton.ZIP_SIZE, raf));
-        } catch (IOException ex) {
-            return null;
-        }
-    }
-
-    public static ArrayList<Address> arrayFromFile(RandomAccessFile raf) {
-        ArrayList<Address> list = new ArrayList<>();
-        try {
-            raf.seek(0);
-            while (raf.getFilePointer() < raf.length())
-                list.add(Address.fromFile(raf));
-        } catch (IOException ex) {
-            ex.printStackTrace();
-        }
-        return list;
-    }
-
-    public String getName() {
-        return this.name;
-    }
-
-    public String getStreet() {
-        return this.street;
-    }
-
-    public String getCity() {
-        return this.city;
-    }
-
-    public String getState() {
-        return this.state;
-    }
-
-    public String getZip() {
-        return this.zip;
-    }
-
-    public static void saveToEndOfFile(RandomAccessFile raf, Address address) {
-        try {
-            raf.seek(raf.length());
-            saveToFile(raf, address);
-        } catch (IOException ex) {
-            ex.printStackTrace();
-        }
-    }
-
-    public static void saveToFile(RandomAccessFile raf, Address address) {
-        try {
-            raf.seek(raf.length());
-            FixedLengthStringIO.writeFixedLengthString(address.getName(),
-                    CommandButton.NAME_SIZE, raf);
-            FixedLengthStringIO.writeFixedLengthString(address.getStreet(),
-                    CommandButton.STREET_SIZE, raf);
-            FixedLengthStringIO.writeFixedLengthString(address.getCity(),
-                    CommandButton.CITY_SIZE, raf);
-            FixedLengthStringIO.writeFixedLengthString(address.getState(),
-                    CommandButton.STATE_SIZE, raf);
-            FixedLengthStringIO.writeFixedLengthString(address.getZip(),
-                    CommandButton.ZIP_SIZE, raf);
-        } catch (IOException ex) {
-            ex.printStackTrace();
-        }
-    }
-}
-
 interface Command {
     public void Execute();
 }
@@ -401,7 +318,6 @@ class CommandButton extends Button implements Command {
 
 class AddButton extends CommandButton {
     private CareTaker careTaker;
-    private Originator originator = new Originator();
 
     public AddButton(AddressBookPane pane, RandomAccessFile r, CareTaker careTaker) {
         super(pane, r);
@@ -413,8 +329,7 @@ class AddButton extends CommandButton {
     public void Execute() {
         Address address = writeAddress();
         if (address == null) return;
-        originator.setState(address);
-        careTaker.add(originator.saveStateToMemento());
+        careTaker.add(address.saveStateToMemento());
     }
 }
 
@@ -498,13 +413,11 @@ class FirstButton extends CommandButton {
 
 class UndoButton extends CommandButton {
 
-    private Originator originator;
     private CareTaker careTaker;
 
     public UndoButton(AddressBookPane pane, RandomAccessFile r, CareTaker careTaker) {
         super(pane, r);
         this.setText("Undo");
-        this.originator = new Originator();
         this.careTaker = careTaker;
     }
 
@@ -524,13 +437,11 @@ class UndoButton extends CommandButton {
 
 class RedoButton extends CommandButton {
 
-    private Originator originator;
     private CareTaker careTaker;
 
     public RedoButton(AddressBookPane pane, RandomAccessFile r, CareTaker careTaker) {
         super(pane, r);
         this.setText("Redo");
-        this.originator = new Originator();
         this.careTaker = careTaker;
     }
 
@@ -538,9 +449,9 @@ class RedoButton extends CommandButton {
     public void Execute() {
         Memento m = careTaker.getNext();
         if (m == null) return;
-        originator.getStateFromMemento(m);
-        if (originator.getState() == null) return;
-        Address.saveToEndOfFile(super.raf, originator.getState());
+        Address a = Address.getStateFromMemento(m);
+        if (a == null) return;
+        Address.saveToEndOfFile(super.raf, a);
         try {
             readAddress(super.raf.length() - 2 * CommandButton.RECORD_SIZE);
         } catch (IOException ex) {
@@ -548,111 +459,3 @@ class RedoButton extends CommandButton {
         }
     }
 }
-
-interface AddressBookPaneDecorator {
-    AddressBookPane getPane();
-
-    void addButtons(CommandButton... buttons);
-}
-
-abstract class PaneDecorator implements AddressBookPaneDecorator {
-    private AddressBookPane pane;
-
-    public PaneDecorator(AddressBookPane pane) {
-        this.pane = pane;
-    }
-
-    @Override
-    public AddressBookPane getPane() {
-        return this.pane;
-    }
-
-    @Override
-    public void addButtons(CommandButton... buttons) {
-        this.pane.getButtonsPane().getChildren().addAll(buttons);
-    }
-
-}
-
-class MainPaneDecorator extends PaneDecorator {
-    MainPaneDecorator(AddressBookPane pane) {
-        super(pane);
-        Originator originator = new Originator();
-        CareTaker careTaker = new CareTaker();
-        AddButton jbtAdd = new AddButton(pane, pane.raf, careTaker);
-        RedoButton jbtRedo = new RedoButton(pane, pane.raf, careTaker);
-        UndoButton jbtUndo = new UndoButton(pane, pane.raf, careTaker);
-        jbtAdd.setOnAction(pane.ae);
-        jbtRedo.setOnAction(pane.ae);
-        jbtUndo.setOnAction(pane.ae);
-        Address.arrayFromFile(pane.raf).forEach(a -> {
-            originator.setState(a);
-            careTaker.add(originator.saveStateToMemento());
-        });
-        this.addButtons(jbtAdd, jbtRedo, jbtUndo);
-    }
-}
-
-class SecondPaneDecorator extends PaneDecorator {
-    SecondPaneDecorator(AddressBookPane pane) {
-        super(pane);
-    }
-}
-
-class Memento {
-    private Address state;
-
-    Memento(Address state) {
-        this.state = state;
-    }
-
-    Address getState() {
-        return this.state;
-    }
-}
-
-class CareTaker {
-    private ArrayList<Memento> mementos = new ArrayList<>();
-    private int index;
-
-    CareTaker() {
-        this.index = mementos.size();
-    }
-
-    public void add(Memento state) {
-        if (state == null) return;
-        this.mementos.add(state);
-        index = this.mementos.size() - 1;
-    }
-
-    public Memento getNext() {
-        if (this.mementos.isEmpty() || index > this.mementos.size() - 1) return null;
-        return mementos.get(index++);
-    }
-
-    public Memento getPrev() {
-        if (this.mementos.isEmpty() || index <= 0) return null;
-        return mementos.get(--index);
-    }
-}
-
-class Originator {
-    Address state;
-
-    public void setState(Address state) {
-        this.state = state;
-    }
-
-    public Address getState() {
-        return this.state;
-    }
-
-    public Memento saveStateToMemento() {
-        return new Memento(this.state);
-    }
-
-    public void getStateFromMemento(Memento memento) {
-        this.state = memento.getState();
-    }
-}
-
